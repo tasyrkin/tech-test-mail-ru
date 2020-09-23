@@ -132,14 +132,13 @@ void tokenize(std::string const &str, const char delim, std::vector<std::string>
 	}
 }
 
-int main(int argc, char**argv) {
-  if (argc < 2) {
-    print_help_and_exit();
-  }
-  std::string file_path(argv[1]);
-  std::cout << "file_path = " << file_path << std::endl;
-
-  std::vector<std::unique_ptr<Command>> commands;
+/**
+ * Parses commands as specified in the requirements. Exits the program if finds a wrong command
+ * @param argc
+ * @param argv
+ * @param commands
+ */
+void parse_commands(int argc, char* const* argv, std::vector<std::unique_ptr<Command>>& commands) {
   for(int idx = 2; idx < argc; ++idx) {
     std::string cmd(argv[idx]);
     std::vector<std::string> parts;
@@ -167,32 +166,61 @@ int main(int argc, char**argv) {
         std::cerr << "Warning: unable to parse argument [" << cmd << "]" << std::endl;
         print_help_and_exit();
       }
-      std::unique_ptr<Command> replace_command (
+      std::__1::unique_ptr<Command> replace_command (
           new ReplaceCommand(field, parts[1][1], parts[1][2])
       );
       commands.push_back(std::move(replace_command));
     }
   }
+}
+
+/**
+ * Applies commands as specified in the requirements.
+ * Returns changed flag together with the modified fileds
+ * @param line
+ * @param commands
+ * @param changed
+ * @param modified
+ */
+void apply_commands(
+    std::string& line,
+    std::vector<std::unique_ptr<Command>>& commands,
+    bool& changed,
+    std::vector<std::string>& modified
+    ) {
+  std::vector<std::string> fields;
+  tokenize(line, '\t', fields);
+  for(std::vector<std::string>::size_type idx = 0; idx != fields.size(); idx++) {
+    std::string& str = fields[idx];
+    for(auto& command : commands) {
+      std::optional<std::string> modified_str = *command->apply(idx, str);
+      if (modified_str.has_value()) {
+        str = modified_str.value();
+        changed = true;
+      }
+    }
+    modified.push_back(str);
+  }
+
+}
+
+int main(int argc, char**argv) {
+  if (argc < 2) {
+    print_help_and_exit();
+  }
+  std::string file_path(argv[1]);
+
+  std::vector<std::unique_ptr<Command>> commands;
+  parse_commands(argc, argv, commands);
 
   std::ifstream infile(file_path);
   std::string line;
   while (std::getline(infile, line)) {
-    std::vector<std::string> fields;
-    tokenize(line, '\t', fields);
-    bool changed = false;
     std::vector<std::string> modified;
-    for(std::vector<std::string>::size_type idx = 0; idx != fields.size(); idx++) {
-      std::string& str = fields[idx];
-      for(auto& command : commands) {
-        std::optional<std::string> modified_str = *command->apply(idx, str);
-        if (modified_str.has_value()) {
-          str = modified_str.value();
-          changed = true;
-        }
-      }
-      modified.push_back(str);
-    }
-    // at least one field had changed
+    bool changed;
+    apply_commands(line, commands, changed, modified);
+
+    // at least one field had changed, thus print out the full string
     if (changed) {
       for(std::vector<std::string>::size_type idx = 0; idx != modified.size(); idx++) {
         std::cout << modified[idx];
